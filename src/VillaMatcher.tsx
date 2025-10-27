@@ -476,6 +476,7 @@ const VillaMatcher = () => {
               </button>
             </div>
 
+            {/* === FIXED LINE HERE === */}
             <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-8" role="alert">
               <p className="font-bold">คำเตือนสำหรับ Admin!</p>
               <p>
@@ -483,9 +484,10 @@ const VillaMatcher = () => {
               </p>
               <p>
                 สำหรับผลโหวตของ <strong>ทุกคน (12 คน)</strong> กรุณาตรวจสอบที่ Dashboard
-                ของ <strong>Netlify -> Forms -> "outing-survey"</strong> ครับ
+                ของ <strong>Netlify → Forms → "outing-survey"</strong> ครับ
               </p>
             </div>
+            {/* === END OF FIX === */}
 
 
             {/* Summary */}
