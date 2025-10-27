@@ -409,16 +409,16 @@ const VillaMatcher = () => {
             <div className="text-center mb-8">
               <Home className="w-16 h-16 mx-auto text-blue-600 mb-4" />
               <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                🏡 Villa Matcher
+                🏡 RCB Outing 2025
               </h1>
-              <p className="text-gray-600">Company Outing Survey</p>
+              <p className="text-gray-600">Company Outing Matching System</p>
             </div>
 
             {/* Form นี้จะ submit ไปที่ handleLogin ของ React */}
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ชื่อ-นามสกุล
+                  ชื่อเล่น
                 </label>
                 <input
                   type="text"
