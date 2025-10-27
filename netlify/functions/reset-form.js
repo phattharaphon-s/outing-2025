@@ -1,8 +1,7 @@
 // netlify/functions/reset-form.js
 
-// Function นี้จะถูกเรียกจากหน้า Admin เพื่อลบ Form ทิ้ง (Reset Count)
 exports.handler = async function(event, context) {
-  // 1. เช็ครหัสผ่านที่ส่งมาจาก React
+  // 1. ตรวจสอบรหัสผ่านและ Environment Variables
   const { ADMIN_PASSWORD, NETLIFY_ACCESS_TOKEN, NETLIFY_FORM_ID } = process.env;
   let body;
   try {
@@ -16,32 +15,55 @@ exports.handler = async function(event, context) {
     return { statusCode: 401, body: "Unauthorized: Invalid Password" };
   }
 
-  // 2. ถ้าผ่าน ให้ลบ Form
   if (!NETLIFY_ACCESS_TOKEN || !NETLIFY_FORM_ID) {
     return { statusCode: 500, body: "Missing Netlify environment variables" };
   }
 
-  const url = `https://api.netlify.com/api/v1/forms/${NETLIFY_FORM_ID}`;
-  
-  try {
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${NETLIFY_ACCESS_TOKEN}`
-      }
-    });
+  const authHeader = { 'Authorization': `Bearer ${NETLIFY_ACCESS_TOKEN}` };
 
-    // 204 คือลบสำเร็จ, 404 คือไม่เจอ (อาจจะลบไปแล้ว) ถือว่าสำเร็จทั้งคู่
-    if (response.status === 204 || response.status === 404) {
-      return {
-        statusCode: 200, 
-        body: JSON.stringify({ message: "Form and all submissions successfully deleted." })
-      };
-    } else {
-      return { statusCode: response.status, body: response.statusText };
+  try {
+    // 2. ดึงข้อมูล Submissions ทั้งหมดที่มีอยู่
+    const getUrl = `https://api.netlify.com/api/v1/forms/${NETLIFY_FORM_ID}/submissions`;
+    const getResponse = await fetch(getUrl, { headers: authHeader });
+    
+    if (!getResponse.ok) {
+      throw new Error(`Failed to fetch submissions for deletion: ${getResponse.statusText}`);
+    }
+    
+    const submissions = await getResponse.json();
+
+    if (!submissions || submissions.length === 0) {
+      return { statusCode: 200, body: JSON.stringify({ message: "No submissions to delete." }) };
     }
 
+    // 3. วนลูปเพื่อลบ Submission ทีละอัน
+    const deletePromises = submissions.map(submission => {
+      // API endpoint สำหรับลบ submission แต่ละอัน
+      const deleteUrl = `https://api.netlify.com/api/v1/submissions/${submission.id}`; 
+      return fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: authHeader
+      });
+    });
+
+    // รอให้ทุกการลบเสร็จสิ้น
+    const results = await Promise.all(deletePromises);
+
+    // ตรวจสอบว่ามีอันไหนลบไม่สำเร็จหรือไม่
+    const failedDeletions = results.filter(res => !res.ok);
+    if (failedDeletions.length > 0) {
+      console.error('Some submissions failed to delete:', failedDeletions);
+      throw new Error(`Failed to delete ${failedDeletions.length} submissions.`);
+    }
+
+    // 4. ส่งข้อความกลับไปว่าลบสำเร็จ
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: `Successfully deleted ${submissions.length} submissions.` })
+    };
+
   } catch (error) {
+    console.error('Error in reset-form function:', error);
     return { statusCode: 500, body: error.toString() };
   }
 };
