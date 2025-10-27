@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Home, Award, BarChart3 } from 'lucide-react';
+// src/VillaMatcher.tsx (Updated)
 
-// Helper function สำหรับ Netlify Forms
+import React, { useState, useEffect } from 'react';
+import { Home, Award, BarChart3, RefreshCw, AlertTriangle } from 'lucide-react';
+
+// Helper function สำหรับ Netlify Forms (ยังต้องใช้)
 const encode = (data) => {
   return Object.keys(data)
     .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
@@ -14,49 +16,82 @@ const VillaMatcher = () => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
+  
+  // --- CHANGE START ---
+  // allResponses จะดึงมาจาก Server (Netlify Functions) ไม่ใช่ localStorage
   const [allResponses, setAllResponses] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // เพิ่ม state loading
   const [adminPassword, setAdminPassword] = useState('');
+  const [isResetting, setIsResetting] = useState(false); // state สำหรับปุ่ม reset
+  const [error, setError] = useState(null); // state สำหรับ error
+  // --- CHANGE END ---
 
   useEffect(() => {
-    loadResponses();
+    loadCentralResponses(); // เปลี่ยนชื่อ function
   }, []);
 
-  const loadResponses = () => { // ไม่ต้อง async
+  // --- CHANGE START ---
+  // Function ใหม่: ดึงข้อมูลจาก Netlify Function
+  const loadCentralResponses = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      const responses = [];
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const key = window.localStorage.key(i);
-        if (key && key.startsWith('response:')) {
-          try {
-            const data = window.localStorage.getItem(key); // ใช้ getItem
-            if (data) {
-              responses.push(JSON.parse(data)); 
-            }
-          } catch (e) {
-            console.log('Error loading response:', e);
-          }
-        }
+      const response = await fetch("/.netlify/functions/get-submissions");
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.statusText}`);
       }
-      setAllResponses(responses);
+      const data = await response.json();
+      // data.submissions คือ array ของ submissions จาก Netlify
+      setAllResponses(data.submissions || []);
     } catch (e) {
-      console.log('Storage not available, using local state');
+      console.error('Error loading central responses:', e);
+      setError('ไม่สามารถเชื่อมต่อ Server (Functions) ได้');
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // Function ใหม่: สำหรับปุ่ม Reset ในหน้า Admin
+  const handleResetSubmissions = async () => {
+    if (!window.confirm("คุณแน่ใจหรือไม่? นี่จะลบข้อมูลการโหวตทั้งหมดถาวร")) {
+      return;
+    }
+    setIsResetting(true);
+    setError(null);
+    try {
+      const response = await fetch("/.netlify/functions/reset-form", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }) // ส่งรหัสผ่านที่กรอกไปให้ function
+      });
+
+      if (response.status === 401) {
+        alert('รหัสผ่าน Admin (ใน Environment) ไม่ถูกต้อง!');
+      } else if (!response.ok) {
+        throw new Error(`Failed to reset: ${response.statusText}`);
+      } else {
+        alert('Reset ข้อมูลสำเร็จ!');
+      }
+      
+      await loadCentralResponses(); // โหลดข้อมูลใหม่ (ควรจะเป็น 0)
+    } catch (e) {
+      console.error('Error resetting form:', e);
+      setError('เกิดข้อผิดพลาดในการ Reset');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+  // --- CHANGE END ---
+
+
   const saveResponse = async (responseData) => {
     try {
-      // 1. บันทึกลง localStorage (เพื่อให้เช็คซ้ำได้ในเครื่องนี้)
-      const key = `response:${Date.now()}_${userName.replace(/\s/g, '_')}`;
-      window.localStorage.setItem(key, JSON.stringify(responseData)); 
-      
-      loadResponses(); // โหลดซ้ำจาก localStorage
-
-      // 2. ส่งข้อมูลไป Netlify Forms (เพื่อเก็บข้อมูลส่วนกลาง)
+      // 1. ส่งข้อมูลไปเก็บที่ Netlify Forms (เหมือนเดิม แต่สำคัญมาก)
       await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: encode({
-          "form-name": "outing-survey", // ต้องตรงกับ name ใน index.html
+          "form-name": "outing-survey", 
           "userName": responseData.userName,
           "winner": responseData.result.winner,
           "winnerName": villaData[responseData.result.winner].name,
@@ -66,13 +101,17 @@ const VillaMatcher = () => {
         })
       });
 
+      // 2. เมื่อส่งสำเร็จ ให้โหลดข้อมูลทั้งหมดใหม่จาก Server
+      await loadCentralResponses();
+
     } catch (e) {
-      console.log('Storage error, using local state');
-      setAllResponses(prev => [...prev, responseData]);
+      console.log('Storage error:', e);
+      setError('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
     }
   };
 
   const questions = [
+    // ... (โค้ดคำถาม 15 ข้อของคุณ เหมือนเดิม) ...
     {
       id: 1,
       question: "ถ้าคุณได้วันหยุด 2 คืน คุณอยากให้มันเป็นแบบไหน?",
@@ -226,6 +265,7 @@ const VillaMatcher = () => {
   ];
 
   const villaData = {
+    // ... (โค้ด villaData ของคุณ เหมือนเดิม) ...
     kk: {
       name: "Khunkhao Pool Villa",
       icon: "🏊‍♂️",
@@ -257,9 +297,12 @@ const VillaMatcher = () => {
   const handleLogin = (e) => {
     e.preventDefault();
     if (userName.trim()) {
-      const existing = allResponses.find(r => r.userName === userName.trim());
+      // --- CHANGE ---
+      // เช็คชื่อซ้ำจาก allResponses ที่มาจาก Server
+      // ข้อมูลใน form อยู่ใน `r.data`
+      const existing = allResponses.find(r => r.data.userName === userName.trim());
       if (existing) {
-        alert('คุณทำแบบสอบถามไปแล้ว! หากต้องการทำใหม่ กรุณาติดต่อผู้ดูแลระบบ');
+        alert('ชื่อนี้ทำแบบสอบถามไปแล้ว! กรุณาติดต่อผู้ดูแลระบบ');
         return;
       }
       setScreen('survey');
@@ -267,6 +310,7 @@ const VillaMatcher = () => {
   };
 
   const handleAnswer = (optionIndex) => {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     const newAnswers = { ...answers, [currentQuestion]: optionIndex };
     setAnswers(newAnswers);
 
@@ -278,6 +322,7 @@ const VillaMatcher = () => {
   };
 
   const calculateResult = (finalAnswers) => {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     let kkScore = 0;
     let canalScore = 0;
 
@@ -293,7 +338,7 @@ const VillaMatcher = () => {
     const totalScore = kkScore + canalScore;
     const kkPercent = totalScore > 0 ? Math.round((kkScore / totalScore) * 100) : 50;
     const canalPercent = totalScore > 0 ? Math.round((canalScore / totalScore) * 100) : 50;
-
+    
     const winner = kkScore > canalScore ? 'kk' : 'canal';
     const matchPercent = winner === 'kk' ? kkPercent : canalPercent;
 
@@ -314,11 +359,15 @@ const VillaMatcher = () => {
       answers: finalAnswers,
       result: resultData
     };
-    saveResponse(responseData);
+    
+    // --- CHANGE ---
+    // saveResponse จะส่งข้อมูลไป Netlify Form และโหลดข้อมูลใหม่
+    saveResponse(responseData); 
     setScreen('result');
   };
 
   const goBack = () => {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
     }
@@ -326,8 +375,12 @@ const VillaMatcher = () => {
 
   const handleAdminLogin = (e) => {
     e.preventDefault();
+    // --- CHANGE ---
+    // รหัสผ่าน 'admin2024' จะใช้แค่เพื่อ *เข้าหน้า* Admin
+    // แต่การ Reset จะใช้รหัสผ่านจาก Environment Variable (ที่ตั้งใน Netlify)
+    // เพื่อความปลอดภัย เราจะเช็คแค่ UI ตรงนี้
     if (adminPassword === 'admin2024') {
-      loadResponses();
+      loadCentralResponses(); // โหลดข้อมูลใหม่เผื่อไว้
       setScreen('admin');
     } else {
       alert('รหัสผ่านไม่ถูกต้อง');
@@ -335,12 +388,17 @@ const VillaMatcher = () => {
   };
 
   const restart = () => {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     setCurrentQuestion(0);
     setAnswers({});
     setResult(null);
     setUserName('');
     setScreen('login');
   };
+
+  // ---------------------------------
+  // ----- RENDER SCREENS (JSX) ------
+  // ---------------------------------
 
   // LOGIN SCREEN
   if (screen === 'login') {
@@ -369,14 +427,16 @@ const VillaMatcher = () => {
                   placeholder="กรอกชื่อของคุณ"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
                   required
+                  disabled={isLoading} // disable ตอน loading
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all"
+                className="w-full bg-gradient-to-r from-blue-500 to-green-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50"
+                disabled={isLoading} // disable ตอน loading
               >
-                เริ่มทำแบบสอบถาม 🚀
+                {isLoading ? "กำลังโหลดข้อมูล..." : "เริ่มทำแบบสอบถาม 🚀"}
               </button>
             </form>
 
@@ -390,8 +450,22 @@ const VillaMatcher = () => {
             </div>
 
             <div className="mt-6 text-center text-sm text-gray-500">
-              <p>👥 {allResponses.length} / 12 คน ทำแบบสอบถามแล้ว</p>
+              {/* --- CHANGE --- 
+                  ใช้ allResponses.length ที่มาจาก server
+              */}
+              {isLoading ? (
+                <p>กำลังโหลดจำนวนคน...</p>
+              ) : (
+                <p>👥 {allResponses.length} / 12 คน ทำแบบสอบถามแล้ว</p>
+              )}
             </div>
+            
+            {/* --- CHANGE ---  แสดง Error ถ้ามี */}
+            {error && (
+              <div className="mt-4 text-center text-red-600 bg-red-100 p-3 rounded-lg">
+                <p>{error}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -400,6 +474,7 @@ const VillaMatcher = () => {
 
   // ADMIN LOGIN
   if (screen === 'admin-login') {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4 md:p-8 flex items-center justify-center">
         <div className="max-w-md w-full">
@@ -415,7 +490,7 @@ const VillaMatcher = () => {
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  รหัสผ่าน
+                  รหัสผ่าน (admin2024)
                 </label>
                 <input
                   type="password"
@@ -450,48 +525,60 @@ const VillaMatcher = () => {
 
   // ADMIN DASHBOARD
   if (screen === 'admin') {
-    const kkVotes = allResponses.filter(r => r.result.winner === 'kk').length;
-    const canalVotes = allResponses.filter(r => r.result.winner === 'canal').length;
+    
+    // --- CHANGE ---
+    // ปรับ Logic การนับคะแนนให้ตรงกับโครงสร้างข้อมูลใหม่จาก Server
+    // ข้อมูล form อยู่ใน response.data
+    const kkVotes = allResponses.filter(r => r.data.winner === 'kk').length;
+    const canalVotes = allResponses.filter(r => r.data.winner === 'canal').length;
     const totalVotes = allResponses.length;
+    // --- END CHANGE ---
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4 md:p-8">
         <div className="max-w-6xl mx-auto">
           <div className="bg-white rounded-2xl shadow-xl p-8">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
               <div>
                 <h1 className="text-3xl font-bold text-gray-800 mb-2">
                   📊 Admin Dashboard
                 </h1>
-                <p className="text-gray-600">สรุปผลทั้งหมด {totalVotes} คน</p>
+                <p className="text-gray-600">สรุปผลทั้งหมด {totalVotes} คน (จาก Server)</p>
               </div>
-              <button
-                onClick={() => {
-                  setScreen('login');
-                  setAdminPassword('');
-                }}
-                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
-              >
-                ออกจากระบบ
-              </button>
+              <div className='flex gap-2'>
+                <button
+                  onClick={loadCentralResponses} // เพิ่มปุ่ม Refresh
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={() => {
+                    setScreen('login');
+                    setAdminPassword('');
+                  }}
+                  className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
+                >
+                  ออกจากระบบ
+                </button>
+              </div>
             </div>
+            
+            {/* --- CHANGE ---  แสดง Error ถ้ามี */}
+            {error && (
+              <div className="mb-4 text-center text-red-600 bg-red-100 p-3 rounded-lg">
+                <p>{error}</p>
+              </div>
+            )}
 
-            {/* === FIXED LINE HERE === */}
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-8" role="alert">
-              <p className="font-bold">คำเตือนสำหรับ Admin!</p>
-              <p>
-                ข้อมูลในหน้านี้ดึงมาจาก <strong>Local Storage</strong> ของเบราว์เซอร์คุณเท่านั้น
-              </p>
-              <p>
-                สำหรับผลโหวตของ <strong>ทุกคน (12 คน)</strong> กรุณาตรวจสอบที่ Dashboard
-                ของ <strong>Netlify → Forms → "outing-survey"</strong> ครับ
-              </p>
-            </div>
-            {/* === END OF FIX === */}
-
+            {/* --- CHANGE START --- 
+                ลบคำเตือน localStorage เพราะตอนนี้เราดึงจาก server แล้ว
+            */}
 
             {/* Summary */}
             <div className="grid md:grid-cols-2 gap-6 mb-8">
+              {/* ... (เหมือนเดิม) ... */}
               <div className="bg-gradient-to-r from-blue-400 to-blue-600 rounded-xl p-6 text-white">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -528,12 +615,13 @@ const VillaMatcher = () => {
                 </div>
               </div>
             </div>
+            {/* --- END CHANGE --- */}
 
             {/* Winner Announcement */}
             {totalVotes >= 12 && (
               <div className="bg-gradient-to-r from-yellow-400 to-orange-500 rounded-xl p-8 text-white mb-8 text-center">
                 <Award className="w-16 h-16 mx-auto mb-4" />
-                <h2 className="text-3xl font-bold mb-2">🎉 ที่พักที่ได้รับเลือก (จากในเครื่องนี้)!</h2>
+                <h2 className="text-3xl font-bold mb-2">🎉 ที่พักที่ได้รับเลือก!</h2>
                 <div className="text-5xl font-bold my-4">
                   {kkVotes > canalVotes ? villaData.kk.name : villaData.canal.name}
                 </div>
@@ -546,41 +634,71 @@ const VillaMatcher = () => {
             {/* Individual Responses */}
             <div className="space-y-4">
               <h3 className="text-xl font-bold text-gray-800 mb-4">
-                📋 รายละเอียดผู้ตอบ (ในเครื่องนี้)
+                📋 รายละเอียดผู้ตอบ (จาก Server)
               </h3>
-              {allResponses.map((response, index) => (
-                <div key={index} className="border-2 border-gray-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between">
+              
+              {/* --- CHANGE --- 
+                  ปรับการแสดงผลให้ตรงกับโครงสร้างข้อมูลใหม่
+              */}
+              {isLoading ? <p>Loading responses...</p> : 
+                allResponses.map((response, index) => (
+                <div key={response.id || index} className="border-2 border-gray-200 rounded-xl p-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold">
                         {index + 1}
                       </div>
                       <div>
                         <div className="font-semibold text-gray-800">
-                          {response.userName}
+                          {response.data.userName}
                         </div>
                         <div className="text-sm text-gray-500">
-                          {new Date(response.timestamp).toLocaleString('th-TH')}
+                          {new Date(response.created_at).toLocaleString('th-TH')}
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right mt-2 sm:mt-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-2xl">
-                          {villaData[response.result.winner].icon}
+                          {villaData[response.data.winner].icon}
                         </span>
                         <span className="font-bold text-gray-800">
-                          {villaData[response.result.winner].name}
+                          {villaData[response.data.winner].name}
                         </span>
                       </div>
                       <div className="text-sm text-gray-600">
-                        Match: {response.result.matchPercent}%
+                        Match: {response.data.matchPercent}%
+                        (KK: {response.data.kkPercent}% | 
+                        Canal: {response.data.canalPercent}%)
                       </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
+            
+            {/* --- CHANGE START --- */}
+            {/* เพิ่มส่วนสำหรับ Reset ข้อมูล */}
+            <div className="mt-12 pt-8 border-t-2 border-dashed border-red-300">
+              <h3 className="text-xl font-bold text-red-700 mb-4 flex items-center gap-2">
+                <AlertTriangle className="w-6 h-6" />
+                ส่วนอันตราย (Admin)
+              </h3>
+              <p className="text-gray-600 mb-4">
+                ใช้ปุ่มนี้เพื่อลบข้อมูลการโหวตทั้งหมดและเริ่มนับ 0 ใหม่ (สำหรับ Test)
+                <br />
+                <strong>คำเตือน:</strong> ข้อมูลจะหายทั้งหมดและกู้คืนไม่ได้
+              </p>
+              <button
+                onClick={handleResetSubmissions}
+                disabled={isResetting}
+                className="px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {isResetting ? "กำลังลบข้อมูล..." : "Reset ข้อมูลโหวตทั้งหมด"}
+              </button>
+            </div>
+            {/* --- CHANGE END --- */}
+
           </div>
         </div>
       </div>
@@ -589,6 +707,7 @@ const VillaMatcher = () => {
 
   // SURVEY SCREEN
   if (screen === 'survey') {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     const progress = ((currentQuestion + 1) / questions.length) * 100;
     const currentQ = questions[currentQuestion];
 
@@ -659,6 +778,7 @@ const VillaMatcher = () => {
 
   // RESULT SCREEN
   if (screen === 'result' && result) {
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     const winnerVilla = villaData[result.winner];
     const loserVilla = villaData[result.winner === 'kk' ? 'canal' : 'kk'];
 
