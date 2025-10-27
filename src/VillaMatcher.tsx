@@ -490,7 +490,7 @@ const VillaMatcher = () => {
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  รหัสผ่าน (admin2024)
+                  รหัสผ่าน
                 </label>
                 <input
                   type="password"
